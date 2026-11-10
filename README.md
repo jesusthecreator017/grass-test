@@ -44,23 +44,74 @@ Grass has too many blades to store or simulate individually. A 200 m field at 7 
 3. **The GPU culls, and the CPU never learns the count.** A compute shader appends visible blades to a storage buffer with an atomic counter. That counter is laid out as indirect draw arguments, so the draw reads the instance count straight from GPU memory.
 4. **A blade is 64 bytes of parameters.** The vertex shader expands each one into a bent strip of triangles, and no vertex buffers exist.
 
-```
- CPU (per frame)                    GPU
- ───────────────                    ───────────────────────────────────────────
- upload uniform (settings,   ──►    compute cs_main   one thread per candidate cell
- camera, wind, pushers)               hash cell → cull → LOD → density → species
- reset draw args to              ──►  → clump → variation → wind → pushers → cull
- [15,0,0,0] [7,0,0,0]                 atomicAdd(instance_count), write Blade
-                                                │
-                                                ▼
-                                    render pass   draw_indirect (near), draw_indirect (far)
-                                      vs_main  Bezier strip from Blade
-                                      fs_main  lighting, shadows, colour
+```mermaid
+flowchart LR
+    subgraph CPU["CPU, once per frame"]
+        U["Upload uniform<br/>settings, camera, wind, pushers"]
+        R["Reset draw args<br/>near: 15 verts, far: 7 verts, 0 instances"]
+    end
+
+    subgraph COMP["GPU compute: cs_main"]
+        direction TB
+        C1["One thread per candidate cell"]
+        C2["Hash cell, cull, pick LOD,<br/>read density, choose species,<br/>clump, wind, pushers, final cull"]
+        C3["atomicAdd instance_count,<br/>write 64-byte Blade"]
+        C1 --> C2 --> C3
+    end
+
+    subgraph BUF["GPU memory"]
+        NB[("Near blades<br/>700k x 64 B")]
+        FB[("Far blades<br/>700k x 64 B")]
+        DA[("Draw args")]
+    end
+
+    subgraph REND["GPU render pass"]
+        direction TB
+        V["vs_main<br/>Bezier strip from a Blade"]
+        F["fs_main<br/>lighting, shadows, colour"]
+        V --> F
+    end
+
+    U --> COMP
+    R --> DA
+    COMP --> NB
+    COMP --> FB
+    COMP --> DA
+    NB --> REND
+    FB --> REND
+    DA -- "draw_indirect<br/>count never reaches the CPU" --> REND
 ```
 
 ## Pipeline in detail
 
 All of this lives in [`src/grass.wgsl`](src/grass.wgsl) (the shader) and [`src/app/grass.rs`](src/app/grass.rs) (buffers, pipelines, settings).
+
+Each compute thread walks this decision chain. It exits as early as it can, so the costly steps only run for cells that might survive.
+
+```mermaid
+flowchart TD
+    A["Thread = one grid cell"] --> B["Hash cell, jitter position"]
+    B --> C{"Inside the field?"}
+    C -- no --> X(["discard"])
+    C -- yes --> D{"Roughly in the frustum?<br/>cheap, generous test"}
+    D -- no --> X
+    D -- yes --> E{"Right LOD for<br/>this distance?"}
+    E -- no --> X
+    E -- yes --> F["Thin or widen near the LOD seam<br/>fade height towards far radius"]
+    F --> G["Multiply height by painted density<br/>and by distance from dirt"]
+    G --> H["Patches: lush, sparse, dry"]
+    H --> I{"Thinned out or<br/>too short?"}
+    I -- yes --> X
+    I -- no --> J["Roll species<br/>short / regular / tall / grain"]
+    J --> K{"Species density roll"}
+    K -- fail --> X
+    K -- pass --> L["Voronoi clump:<br/>height, colour, facing"]
+    L --> M["Stragglers, tussocks, swell<br/>flowers, grain"]
+    M --> N["Pushers flatten nearby blades<br/>wind strength from noise"]
+    N --> O{"Blade visible?<br/>exact test using height"}
+    O -- no --> X
+    O -- yes --> P["atomicAdd slot<br/>write Blade to buffer"]
+```
 
 ### 1. Candidate grid and level of detail
 
@@ -74,6 +125,19 @@ The compute pass dispatches 8×8 workgroups over a 2D grid, with a third dimensi
 Each LOD has its own grid, centred on the camera and snapped to the cell size. This keeps the cell coordinates stable as the camera moves.
 
 Cells whose two fine coordinates are both even exist in both LODs and use the same hash seed. A far blade is therefore the same blade as a near one, only drawn more simply, so nothing pops to a different position when it changes level. Coarse cells also jitter across a 2× area so the sparser grid still covers the ground.
+
+```mermaid
+flowchart LR
+    subgraph N["Near LOD: every cell, 15-vertex blades"]
+        direction LR
+        N1["0 to 60% of near radius<br/>full density"] --> N2["60% to 100%<br/>3 in 4 shrink away,<br/>survivors widen up to 2x"]
+    end
+    subgraph Fa["Far LOD: every 2nd cell, 7-vertex blades"]
+        direction LR
+        F1["near radius to 80% of far radius<br/>full height"] --> F2["80% to 100%<br/>height fades to turf"]
+    end
+    N2 --> F1
+```
 
 **Blending across the LOD seam.** From 60% of `near_radius` out to the boundary:
 
@@ -194,6 +258,23 @@ Fragment shader (`fs_main`), per fragment:
 - **Shadows:** a 3×3 PCF comparison sample against the sun's shadow map, with a fade at the map's edge.
 
 Near blades are also rendered into the shadow map, from the light's viewpoint, with a depth-only pipeline. Far blades are not (they are too small to matter).
+
+## Frame order
+
+```mermaid
+sequenceDiagram
+    participant CPU
+    participant GPU as GPU compute
+    participant SM as Shadow pass
+    participant MP as Main pass
+    CPU->>GPU: upload uniform, reset draw args
+    GPU->>GPU: cs_main fills near and far blade buffers
+    GPU->>SM: draw entities, near blades, props from the light
+    SM->>MP: shadow map
+    MP->>MP: entities, ground, props
+    MP->>MP: near then far blades via draw_indirect
+    GPU-->>CPU: blade counts, one frame late, for the UI only
+```
 
 ## The ground
 
