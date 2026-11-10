@@ -4,6 +4,15 @@ A real-time procedural grass field in Rust, using [wgpu](https://wgpu.rs) and [w
 
 The technique follows Sucker Punch's GDC 2021 talk, *Procedural Grass in Ghost of Tsushima*. This project is a from-scratch Rust and WGSL take on it, with a live editor for tuning every parameter.
 
+![A field of grass with dirt paths, dry patches and flowers](docs/field.jpg)
+
+| | |
+|---|---|
+| ![Meadow at ground level](docs/meadow.jpg) | ![Dry grass patch](docs/dry-grass.jpg) |
+| *Ground level: clumps, irises, and the far LOD fading into hills* | *A dried-out patch beside green turf* |
+
+![Close-up with flowers, rocks and shadows](docs/close-up.jpg)
+
 ## Running
 
 ```sh
@@ -18,7 +27,7 @@ cargo run --release
 | Arrows / `F` | Pan / follow the cube again |
 | Click | Build a tower |
 | `F1` | Hide or show the editor |
-| `F12` | Save a screenshot of the scene to `docs/screenshots/` (`Shift+F12` includes the editor) |
+| `F12` | Save a screenshot of the scene to `docs/screenshots/`, which git ignores (`Shift+F12` includes the editor) |
 
 The editor on the right exposes every grass setting as a slider. **Pause** it and enable the paint tool to brush grass in or out of the field. **Save** writes `assets/editor.json` and `assets/grass_density.png`, and both are loaded on the next start.
 
