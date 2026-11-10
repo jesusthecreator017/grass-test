@@ -1,0 +1,24 @@
+[package]
+name = "grass-test"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wgpu = "30.0.0"
+pollster = "0.3"
+env_logger = "0.11"
+winit = "0.30.13"
+bytemuck = "1.25.2"
+glam = "0.33.7"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+thiserror = "2.0.20"
+log = "0.4.34"
+egui = { version = "0.37.0", features = ["default_fonts"] }
+egui-wgpu = "0.37.0"
+egui-winit = "0.37.0"
+hecs = "0.11.2"
+pathfinding = "4.16.0"
+gltf = { version = "1.4.1", default-features = false, features = ["import", "names", "utils"] }
+rodio = { version = "0.23.0", default-features = false, features = ["playback", "vorbis", "wav"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
