@@ -46,4 +46,5 @@ A wgpu + winit sandbox: a rolling grass field with a player cube, click-placed t
 - Asset and shader paths are absolute, from `env!("CARGO_MANIFEST_DIR")`. The binary is tied to this checkout.
 - The editor's Save button writes `assets/editor.json` (grass and light settings) and `assets/grass_density.png`; both load at startup and are optional. The settings structs use `#[serde(default)]`, so new fields need a default, not a migration.
 - Comments starting with `// ponytail:` mark a deliberate shortcut with its known ceiling and upgrade path. Read them before "fixing" a limitation; add one when taking a similar shortcut.
+- Screenshots: F12 saves the scene to `docs/screenshots/shot-<unix time>.png` (Shift+F12 includes the editor UI).
 - Editor: F1 toggles it. Controls: WASD move, click build, right-drag or Q/E turn, scroll zoom, arrows pan, F follow.

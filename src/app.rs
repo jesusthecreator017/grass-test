@@ -83,6 +83,8 @@ struct State {
     /// Real time not yet consumed by fixed steps.
     accumulator: f32,
     frames: u32,
+    /// F12 pressed: save the next frame. `true` leaves the editor out of it.
+    screenshot: Option<bool>,
 }
 
 impl ApplicationHandler for App {
@@ -138,6 +140,11 @@ impl ApplicationHandler for App {
                     let down = key.state == ElementState::Pressed;
                     if code == KeyCode::F1 && down && !key.repeat {
                         state.editor.visible = !state.editor.visible;
+                    }
+                    // F12 saves a clean screenshot, Shift+F12 one with the editor.
+                    if code == KeyCode::F12 && down && !key.repeat {
+                        state.screenshot = Some(!state.input.held(KeyCode::ShiftLeft)
+                            && !state.input.held(KeyCode::ShiftRight));
                     }
                     state.input.key(code, down && !used_by_ui);
                 }
@@ -197,6 +204,7 @@ impl State {
             last_frame: Instant::now(),
             accumulator: 0.0,
             frames: 0,
+            screenshot: None,
         })
     }
 
@@ -272,7 +280,12 @@ impl State {
         };
 
         let stats = self.stats.tick().to_string();
+        let shot = self.screenshot.take();
+        let hide_ui = shot == Some(true);
         self.ui.run(&self.window, |ui| {
+            if hide_ui {
+                return;
+            }
             self.editor.ui(ui, &self.game.world, &mut self.renderer, &stats);
             if self.editor.visible {
                 self.game.ui(ui.ctx());
@@ -283,14 +296,18 @@ impl State {
         self.frames += 1;
         let capture_frame =
             std::env::var("CAPTURE_FRAME").ok().and_then(|v| v.parse().ok()).unwrap_or(CAPTURE_FRAME);
-        let capture = (self.frames == capture_frame)
+        let env_path = (self.frames == capture_frame)
             .then(|| std::env::var("CAPTURE").ok())
-            .flatten()
-            .map(|path| (path, self.gpu.capture_target()));
+            .flatten();
+        // (path, quit afterwards, texture)
+        let capture = env_path
+            .map(|path| (path, true))
+            .or_else(|| shot.map(|_| (screenshot_path(), false)))
+            .map(|(path, quit)| (path, quit, self.gpu.capture_target()));
 
         // Create the view to draw into and the encoder.
         let view = match &capture {
-            Some((_, texture)) => texture.create_view(&Default::default()),
+            Some((_, _, texture)) => texture.create_view(&Default::default()),
             None => frame.texture.create_view(&Default::default()),
         };
         let mut encoder = self.gpu.device.create_command_encoder(&Default::default());
@@ -301,11 +318,28 @@ impl State {
         // Submit the commands into the queue for presentation.
         self.gpu.queue.submit([encoder.finish()]);
         self.renderer.grass.after_submit();
-        if let Some((path, texture)) = capture {
+        if let Some((path, quit, texture)) = capture {
             self.gpu.save_png(&texture, &path);
-            std::process::exit(0);
+            if quit {
+                std::process::exit(0);
+            }
+            // The frame went to the file, not the window; the last one stays up.
+            self.window.request_redraw();
+            return;
         }
         self.gpu.queue.present(frame);
         self.window.request_redraw();
     }
+}
+
+/// A fresh file in `docs/screenshots/`, named by the time it was taken.
+fn screenshot_path() -> String {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/screenshots");
+    if let Err(err) = std::fs::create_dir_all(dir) {
+        log::error!("can't create {dir}: {err}");
+    }
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    format!("{dir}/shot-{secs}.png")
 }

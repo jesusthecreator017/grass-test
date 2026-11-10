@@ -2,8 +2,6 @@
 
 A real-time procedural grass field in Rust, using [wgpu](https://wgpu.rs) and [winit](https://github.com/rust-windowing/winit). There is no grass mesh and no grass model. Every frame, a compute shader decides where blades grow, what each one looks like, and which ones the camera can see. It writes the survivors into a GPU buffer, and an indirect draw renders them as curved triangle strips.
 
-![Screenshot](docs/screenshot.jpg)
-
 The technique follows Sucker Punch's GDC 2021 talk, *Procedural Grass in Ghost of Tsushima*. This project is a from-scratch Rust and WGSL take on it, with a live editor for tuning every parameter.
 
 ## Running
@@ -20,6 +18,7 @@ cargo run --release
 | Arrows / `F` | Pan / follow the cube again |
 | Click | Build a tower |
 | `F1` | Hide or show the editor |
+| `F12` | Save a screenshot of the scene to `docs/screenshots/` (`Shift+F12` includes the editor) |
 
 The editor on the right exposes every grass setting as a slider. **Pause** it and enable the paint tool to brush grass in or out of the field. **Save** writes `assets/editor.json` and `assets/grass_density.png`, and both are loaded on the next start.
 
